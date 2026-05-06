@@ -10,7 +10,7 @@ const LS_PROMPT    = "gemini_prompt";
 const LS_CHECKSUMS = "gemini_checksums";
 const LS_HISTORY   = "suma_history";
 
-const DEFAULT_MODEL = "gemini-3-flash-preview";
+const DEFAULT_MODEL = "gemini-3.1-flash-lite-preview";
 const DEFAULT_PROMPT =
   "You are an expert academic summarizer. Create a perfectly machine-readable, exhaustive yet compact Markdown summary of this research paper. Include ALL of the following sections with proper Markdown headers:\n\n# Title\n## Authors\n## Publication Year\n## Context / Problem Statement\n## Research Objectives / Questions\n## Methods\n## Key Results & Findings\n## Conclusions\n## Limitations\n## Implications & Future Work\n\nBe exhaustive and scientifically precise. Include every quantitative detail, metric, figure, and table reference. No filler, no hallucinations.";
 
