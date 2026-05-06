@@ -10,6 +10,9 @@ if (!["patch", "minor", "major"].includes(bump)) {
 const TAURI_CONF = "src-tauri/tauri.conf.json";
 const PKG = "package.json";
 
+execSync("git fetch origin", { stdio: "inherit" });
+execSync("git rebase --autostash origin/main", { stdio: "inherit" });
+
 const conf = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
 const [maj, min, pat] = conf.version.split(".").map(Number);
 
