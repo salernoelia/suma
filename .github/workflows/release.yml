@@ -9,6 +9,10 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (e.g. v1.2.3). If omitted, the workflow will use the pushed tag or release tag.'
+        required: false
 
 jobs:
   release:
@@ -48,8 +52,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Suma ${{ github.ref_name }}
+          tagName: ${{ github.event.inputs.tag || github.ref_name || github.event.release.tag_name }}
+          releaseName: Suma ${{ github.event.inputs.tag || github.ref_name || github.event.release.tag_name }}
           releaseBody: Download the installer for your platform from the assets below.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
