@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { readFile, writeTextFile, mkdir, exists, stat, readDir } from "@tauri-apps/plugin-fs";
 import { listen } from "@tauri-apps/api/event";
+import { openPath, revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
 import { analyzePdfStream } from "./lib/gemini";
 import "./App.css";
 
@@ -8,14 +9,32 @@ const LS_API_KEY   = "gemini_api_key";
 const LS_API_KEYS  = "gemini_api_keys";
 const LS_MODEL     = "gemini_model";
 const LS_PROMPT    = "gemini_prompt";
+const LS_PROMPTS   = "suma_prompts";
+const LS_ACTIVE_PROMPT_ID = "suma_active_prompt_id";
 const LS_CHECKSUMS = "gemini_checksums";
 const LS_HISTORY   = "suma_history";
 
 const DEFAULT_MODEL = "gemini-3.1-flash-lite";
-const DEFAULT_PROMPT =
+const DEFAULT_PROMPT_CONTENT =
   "You are an expert academic summarizer. Create a perfectly machine-readable, exhaustive yet compact Markdown summary of this research paper. Include ALL of the following sections with proper Markdown headers:\n\n# Title\n## Authors\n## Publication Year\n## Context / Problem Statement\n## Research Objectives / Questions\n## Methods\n## Key Results & Findings\n## Conclusions\n## Limitations\n## Implications & Future Work\n\nBe exhaustive and scientifically precise. Include every quantitative detail, metric, figure, and table reference. No filler, no hallucinations.";
 
+const DEFAULT_PROMPTS: Prompt[] = [
+  {
+    id: "default",
+    title: "Academic Summarizer",
+    content: DEFAULT_PROMPT_CONTENT,
+    extension: ".md",
+  }
+];
+
 type DocStatus = "queued" | "processing" | "done" | "error" | "duplicate";
+
+interface Prompt {
+  id: string;
+  title: string;
+  content: string;
+  extension: string;
+}
 
 interface Doc {
   id: string;
@@ -38,11 +57,11 @@ async function sha256hex(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function outputPath(pdfPath: string): string {
+function outputPath(pdfPath: string, extension: string = ".md"): string {
   const lastSlash = pdfPath.lastIndexOf("/");
   const dir  = pdfPath.substring(0, lastSlash);
   const base = pdfPath.substring(lastSlash + 1).replace(/\.pdf$/i, "");
-  return `${dir}/summary/${base}.md`;
+  return `${dir}/summary/${base}${extension}`;
 }
 
 function joinPath(p1: string, p2: string): string {
@@ -117,6 +136,12 @@ function SettingsModal({ apiKeys, model, onSave, onClose }: {
   const [keys, setKeys] = useState<string[]>(apiKeys.length > 0 ? apiKeys : [""]);
   const [m, setM] = useState(model);
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
+
   const handleKeyChange = (index: number, val: string) => {
     const newKeys = [...keys];
     newKeys[index] = val;
@@ -155,8 +180,17 @@ function SettingsModal({ apiKeys, model, onSave, onClose }: {
           + Add API Key
         </button>
         <label className="field-label mt">Model</label>
-        <input className="field-input" type="text" value={m}
-          onChange={(e) => setM(e.target.value)} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <input className="field-input" type="text" value={m}
+            onChange={(e) => setM(e.target.value)} />
+          <button 
+            className="btn-link" 
+            style={{ alignSelf: "flex-start", fontSize: "0.7rem" }}
+            onClick={() => openUrl("https://ai.google.dev/gemini-api/docs/models").catch(console.error)}
+          >
+            View all available models ↗
+          </button>
+        </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={() => {
@@ -170,19 +204,130 @@ function SettingsModal({ apiKeys, model, onSave, onClose }: {
   );
 }
 
-function PromptModal({ prompt, onSave, onClose }: {
-  prompt: string; onSave: (p: string) => void; onClose: () => void;
+function PromptModal({ prompts, activeId, onSave, onClose }: {
+  prompts: Prompt[]; activeId: string;
+  onSave: (ps: Prompt[], activeId: string) => void; onClose: () => void;
 }) {
-  const [p, setP] = useState(prompt);
+  const [localPrompts, setLocalPrompts] = useState<Prompt[]>(prompts);
+  const [currentId, setCurrentId] = useState(activeId);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
+
+  const currentPrompt = localPrompts.find(p => p.id === currentId) ?? localPrompts[0];
+
+  const updateCurrent = (updates: Partial<Prompt>) => {
+    setLocalPrompts(prev => prev.map(p => p.id === currentId ? { ...p, ...updates } : p));
+  };
+
+  const addNew = () => {
+    const newP: Prompt = { id: crypto.randomUUID(), title: "New Prompt", content: "", extension: ".md" };
+    setLocalPrompts([...localPrompts, newP]);
+    setCurrentId(newP.id);
+  };
+
+  const duplicatePrompt = (p: Prompt) => {
+    const newP: Prompt = { ...p, id: crypto.randomUUID(), title: `${p.title} (Copy)` };
+    setLocalPrompts([...localPrompts, newP]);
+    setCurrentId(newP.id);
+  };
+
+  const deletePrompt = (id: string) => {
+    if (localPrompts.length <= 1) return;
+    const remaining = localPrompts.filter(p => p.id !== id);
+    setLocalPrompts(remaining);
+    if (currentId === id) {
+      setCurrentId(remaining[0].id);
+    }
+  };
+
+  const extensions = [".md", ".txt", ".csv", ".json"];
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal modal-wide modal-tall" onClick={(e) => e.stopPropagation()}>
-        <h2>Prompt Template</h2>
-        <textarea className="field-input" rows={12} value={p}
-          onChange={(e) => setP(e.target.value)} autoFocus />
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={() => { onSave(p); onClose(); }}>Save</button>
+        <div className="modal-header">
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <h2 style={{ marginBottom: 0 }}>Prompt Templates</h2>
+            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Manage and switch between different summary styles</span>
+          </div>
+          <div className="modal-header-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn primary" onClick={() => { onSave(localPrompts, currentId); onClose(); }}>Save All</button>
+          </div>
+        </div>
+
+        <div className="prompt-modal-container">
+          <div className="prompt-sidebar">
+            <div className="prompt-list">
+              {localPrompts.map(p => (
+                <div key={p.id} className="prompt-item-container">
+                  <button 
+                    className={`prompt-item ${p.id === currentId ? "active" : ""}`}
+                    onClick={() => setCurrentId(p.id)}
+                    style={{ flex: 1 }}
+                  >
+                    {p.title || "Untitled"}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button className="btn" onClick={addNew} style={{ marginTop: "0.5rem" }}>
+              + New Template
+            </button>
+          </div>
+
+          <div className="prompt-editor">
+            <div className="prompt-title-row">
+              <input 
+                className="prompt-title-input"
+                value={currentPrompt.title}
+                onChange={(e) => updateCurrent({ title: e.target.value })}
+                placeholder="Prompt Title"
+              />
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span className="field-label" style={{ margin: 0, textTransform: "none" }}>Format:</span>
+                <select 
+                  className="prompt-select" 
+                  style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+                  value={currentPrompt.extension || ".md"}
+                  onChange={(e) => updateCurrent({ extension: e.target.value })}
+                >
+                  {extensions.map(ext => <option key={ext} value={ext}>{ext}</option>)}
+                </select>
+                <button 
+                  className="btn" 
+                  onClick={() => duplicatePrompt(currentPrompt)}
+                  title="Duplicate this prompt"
+                >
+                  Duplicate
+                </button>
+                {localPrompts.length > 1 && (
+                  <button 
+                    className="btn danger" 
+                    onClick={() => deletePrompt(currentId)}
+                    title="Delete this prompt"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="prompt-content-area">
+              <label className="field-label">Template Content</label>
+              <textarea 
+                className="field-input" 
+                style={{ marginTop: "0.4rem" }}
+                value={currentPrompt.content}
+                onChange={(e) => updateCurrent({ content: e.target.value })}
+                placeholder="Write your prompt here..."
+                autoFocus 
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -193,6 +338,12 @@ function ResultModal({ doc, onClose, onResave }: {
   doc: Doc; onClose: () => void; onResave: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
 
   function copy() {
     navigator.clipboard.writeText(doc.progress);
@@ -228,6 +379,12 @@ function ConfirmModal({ message, onConfirm, onClose }: {
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -268,7 +425,27 @@ export default function App() {
     return [""];
   });
   const [model,  setModel]  = useState(() => localStorage.getItem(LS_MODEL)   ?? DEFAULT_MODEL);
-  const [prompt, setPrompt] = useState(() => localStorage.getItem(LS_PROMPT)  ?? DEFAULT_PROMPT);
+  
+  const [prompts, setPrompts] = useState<Prompt[]>(() => {
+    const stored = localStorage.getItem(LS_PROMPTS);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    const legacy = localStorage.getItem(LS_PROMPT);
+    if (legacy) {
+      return [{ id: "legacy", title: "Legacy Prompt", content: legacy }, ...DEFAULT_PROMPTS];
+    }
+    return DEFAULT_PROMPTS;
+  });
+
+  const [activePromptId, setActivePromptId] = useState(() => 
+    localStorage.getItem(LS_ACTIVE_PROMPT_ID) ?? prompts[0].id
+  );
+
+  const activePrompt = prompts.find(p => p.id === activePromptId) ?? prompts[0];
 
   const [docs, setDocs] = useState<Doc[]>(() =>
     loadHistory().map((d) => ({ ...d, base64: "", fromHistory: true }))
@@ -277,8 +454,6 @@ export default function App() {
   const [showSettings,    setShowSettings]    = useState(false);
   const [showPrompt,      setShowPrompt]      = useState(false);
   const [viewDoc,         setViewDoc]         = useState<Doc | null>(null);
-  const [editingOutId,    setEditingOutId]    = useState<string | null>(null);
-  const [editingOutValue, setEditingOutValue] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const processingIds = useRef<Set<string>>(new Set());
@@ -295,14 +470,17 @@ export default function App() {
       localStorage.removeItem(LS_API_KEY);
     }
   }
-  function savePrompt(p: string) {
-    setPrompt(p);
-    localStorage.setItem(LS_PROMPT, p);
+
+  function updatePrompts(newPrompts: Prompt[], newActiveId: string) {
+    setPrompts(newPrompts);
+    setActivePromptId(newActiveId);
+    localStorage.setItem(LS_PROMPTS, JSON.stringify(newPrompts));
+    localStorage.setItem(LS_ACTIVE_PROMPT_ID, newActiveId);
   }
 
   async function enqueue(filePath: string, name: string, bytes: Uint8Array, customOutPath?: string) {
     const checksum = await sha256hex(bytes);
-    const out = customOutPath ?? outputPath(filePath);
+    const out = customOutPath ?? outputPath(filePath, activePrompt.extension || ".md");
     const checksums = loadChecksums();
 
     let binary = "";
@@ -347,7 +525,7 @@ export default function App() {
               const safeName = pdf.relativePath.replace(/[/\\]/g, "_");
               const baseName = safeName.replace(/\.pdf$/i, "");
               const outDir = joinPath(path, "summaries");
-              const customOutPath = joinPath(outDir, `${baseName}.md`);
+              const customOutPath = joinPath(outDir, `${baseName}${activePrompt.extension || ".md"}`);
               await enqueueRef.current(pdf.path, pdf.relativePath, bytes, customOutPath);
             }
           } else if (path.toLowerCase().endsWith(".pdf")) {
@@ -376,26 +554,6 @@ export default function App() {
     setDocs((prev) => prev.filter((d) => d.id !== id));
   }
 
-  function startEditingOutput(doc: Doc) {
-    setEditingOutId(doc.id);
-    setEditingOutValue(doc.outputPath);
-  }
-
-  function commitOutputEdit(id: string) {
-    const value = editingOutValue.trim();
-    if (value) setDocs((prev) => prev.map((d) => d.id === id ? { ...d, outputPath: value } : d));
-    setEditingOutId(null);
-  }
-
-  function resetOutputPath(id: string) {
-    setDocs((prev) => prev.map((d) => {
-      if (d.id !== id) return d;
-      const def = outputPath(d.path);
-      if (editingOutId === id) setEditingOutValue(def);
-      return { ...d, outputPath: def };
-    }));
-  }
-
   async function processDoc(doc: Doc) {
     if (processingIds.current.has(doc.id)) return;
     processingIds.current.add(doc.id);
@@ -417,7 +575,7 @@ export default function App() {
         const keyIndicator = activeKeys.length > 1 ? ` (Key ${i + 1}/${activeKeys.length})` : "";
         setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "processing", progress: `Initializing connection...${keyIndicator}` } : d));
 
-        await analyzePdfStream(currentKey, model, doc.base64, prompt, (text) => {
+        await analyzePdfStream(currentKey, model, doc.base64, activePrompt.content, (text) => {
           result += text;
           setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, progress: result } : d));
         });
@@ -468,6 +626,37 @@ export default function App() {
     <div className={`app ${dragging ? "app-dragging" : ""}`}>
       <header className="topbar">
         <span className="topbar-title">Suma</span>
+        
+        <div className="topbar-center">
+          <div className="prompt-selector">
+            <span className="prompt-selector-label">Active Prompt:</span>
+            <select 
+              className="prompt-select"
+              value={activePromptId} 
+              onChange={(e) => {
+                if (e.target.value === "new") {
+                  const newPrompt: Prompt = {
+                    id: crypto.randomUUID(),
+                    title: "New Prompt",
+                    content: "",
+                    extension: ".md"
+                  };
+                  updatePrompts([...prompts, newPrompt], newPrompt.id);
+                  setShowPrompt(true);
+                } else {
+                  setActivePromptId(e.target.value);
+                  localStorage.setItem(LS_ACTIVE_PROMPT_ID, e.target.value);
+                }
+              }}
+            >
+              {prompts.map(p => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+              <option value="new">+ Add New Prompt...</option>
+            </select>
+          </div>
+        </div>
+
         <div className="topbar-actions">
           {hasActive && <span className="processing-indicator">Processing…</span>}
           {errorIds.length > 0 && (
@@ -500,29 +689,15 @@ export default function App() {
             <tbody>
               {[...docs].reverse().map((doc) => (
                 <tr key={doc.id}>
-                  <td className="td-name">{doc.name}</td>
+                  <td className="td-name">
+                    <button className="file-link-btn" title="Reveal in directory" onClick={() => revealItemInDir(doc.path).catch(console.error)}>
+                      {doc.name}
+                    </button>
+                  </td>
                   <td className="td-out">
-                    {editingOutId === doc.id ? (
-                      <div className="out-edit-row">
-                        <input
-                          className="out-edit-input"
-                          value={editingOutValue}
-                          onChange={(e) => setEditingOutValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitOutputEdit(doc.id);
-                            if (e.key === "Escape") setEditingOutId(null);
-                          }}
-                          autoFocus
-                        />
-                        <button className="action-btn" onClick={() => commitOutputEdit(doc.id)}>Save</button>
-                        <button className="action-btn" onClick={() => resetOutputPath(doc.id)}>Reset</button>
-                        <button className="action-btn" onClick={() => setEditingOutId(null)}>Cancel</button>
-                      </div>
-                    ) : (
-                      <button className="out-path-btn" title="Click to edit output path" onClick={() => startEditingOutput(doc)}>
-                        {doc.outputPath}
-                      </button>
-                    )}
+                    <button className="out-path-btn" title="Open output directory" onClick={() => revealItemInDir(doc.outputPath).catch(console.error)}>
+                      {doc.outputPath}
+                    </button>
                   </td>
                   <td className="td-status">
                     <Badge status={doc.status} />
@@ -561,7 +736,7 @@ export default function App() {
       {dragging && <div className="drag-overlay"><span>Drop PDFs to add</span></div>}
 
       {showSettings && <SettingsModal apiKeys={apiKeys} model={model} onSave={saveSettings} onClose={() => setShowSettings(false)} />}
-      {showPrompt   && <PromptModal   prompt={prompt}               onSave={savePrompt}   onClose={() => setShowPrompt(false)} />}
+      {showPrompt   && <PromptModal   prompts={prompts} activeId={activePromptId} onSave={updatePrompts} onClose={() => setShowPrompt(false)} />}
       {showClearConfirm && (
         <ConfirmModal
           message="Are you sure you want to clear all documents from the list? This will not delete the files on your disk."
