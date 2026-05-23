@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from "react";
-import { readFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { readFile, writeTextFile, mkdir, exists, stat, readDir } from "@tauri-apps/plugin-fs";
 import { listen } from "@tauri-apps/api/event";
 import { analyzePdfStream } from "./lib/gemini";
 import "./App.css";
 
 const LS_API_KEY   = "gemini_api_key";
+const LS_API_KEYS  = "gemini_api_keys";
 const LS_MODEL     = "gemini_model";
 const LS_PROMPT    = "gemini_prompt";
 const LS_CHECKSUMS = "gemini_checksums";
 const LS_HISTORY   = "suma_history";
 
-const DEFAULT_MODEL = "gemini-3.1-flash-lite-preview";
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 const DEFAULT_PROMPT =
   "You are an expert academic summarizer. Create a perfectly machine-readable, exhaustive yet compact Markdown summary of this research paper. Include ALL of the following sections with proper Markdown headers:\n\n# Title\n## Authors\n## Publication Year\n## Context / Problem Statement\n## Research Objectives / Questions\n## Methods\n## Key Results & Findings\n## Conclusions\n## Limitations\n## Implications & Future Work\n\nBe exhaustive and scientifically precise. Include every quantitative detail, metric, figure, and table reference. No filler, no hallucinations.";
 
@@ -44,6 +45,45 @@ function outputPath(pdfPath: string): string {
   return `${dir}/summary/${base}.md`;
 }
 
+function joinPath(p1: string, p2: string): string {
+  const cleanP1 = p1.replace(/[/\\]+$/, "");
+  const cleanP2 = p2.replace(/^[/\\]+/, "");
+  if (p1.includes("\\")) {
+    return cleanP1 + "\\" + cleanP2;
+  }
+  return cleanP1 + "/" + cleanP2;
+}
+
+async function traverseAndCollectPdfs(
+  dirPath: string,
+  rootPath: string
+): Promise<{ path: string; relativePath: string }[]> {
+  const results: { path: string; relativePath: string }[] = [];
+
+  async function recurse(currentPath: string) {
+    try {
+      const entries = await readDir(currentPath);
+      for (const entry of entries) {
+        const fullPath = joinPath(currentPath, entry.name);
+        if (entry.isDirectory) {
+          await recurse(fullPath);
+        } else if (entry.isFile && entry.name.toLowerCase().endsWith(".pdf")) {
+          let relativePath = fullPath.substring(rootPath.length);
+          if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
+            relativePath = relativePath.substring(1);
+          }
+          results.push({ path: fullPath, relativePath });
+        }
+      }
+    } catch (err) {
+      console.error(`Error reading directory ${currentPath}:`, err);
+    }
+  }
+
+  await recurse(dirPath);
+  return results;
+}
+
 function loadChecksums(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(LS_CHECKSUMS) ?? "{}"); }
   catch { return {}; }
@@ -70,25 +110,60 @@ async function resaveDoc(doc: Doc) {
   await writeTextFile(doc.outputPath, doc.progress);
 }
 
-function SettingsModal({ apiKey, model, onSave, onClose }: {
-  apiKey: string; model: string;
-  onSave: (k: string, m: string) => void; onClose: () => void;
+function SettingsModal({ apiKeys, model, onSave, onClose }: {
+  apiKeys: string[]; model: string;
+  onSave: (k: string[], m: string) => void; onClose: () => void;
 }) {
-  const [k, setK] = useState(apiKey);
+  const [keys, setKeys] = useState<string[]>(apiKeys.length > 0 ? apiKeys : [""]);
   const [m, setM] = useState(model);
+
+  const handleKeyChange = (index: number, val: string) => {
+    const newKeys = [...keys];
+    newKeys[index] = val;
+    setKeys(newKeys);
+  };
+
+  const addKeyField = () => {
+    setKeys([...keys, ""]);
+  };
+
+  const removeKeyField = (index: number) => {
+    if (keys.length === 1) {
+      setKeys([""]);
+    } else {
+      setKeys(keys.filter((_, i) => i !== index));
+    }
+  };
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Settings</h2>
-        <label className="field-label">Gemini API Key</label>
-        <input className="field-input" type="password" value={k}
-          onChange={(e) => setK(e.target.value)} placeholder="AIza…" autoFocus />
+        <label className="field-label">Gemini API Keys</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "250px", overflowY: "auto", paddingRight: "4px" }}>
+          {keys.map((key, idx) => (
+            <div key={idx} style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              <input className="field-input" type="password" value={key}
+                onChange={(e) => handleKeyChange(idx, e.target.value)} placeholder="AIza…" autoFocus={idx === keys.length - 1 && key === ""} />
+              <button className="action-btn danger" type="button" onClick={() => removeKeyField(idx)} style={{ height: "30px" }}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <button className="btn" type="button" onClick={addKeyField} style={{ marginTop: "0.25rem", alignSelf: "flex-start" }}>
+          + Add API Key
+        </button>
         <label className="field-label mt">Model</label>
         <input className="field-input" type="text" value={m}
           onChange={(e) => setM(e.target.value)} />
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={() => { onSave(k, m); onClose(); }}>Save</button>
+          <button className="btn primary" onClick={() => {
+            const filteredKeys = keys.map(k => k.trim()).filter(k => k.length > 0);
+            onSave(filteredKeys.length > 0 ? filteredKeys : [""], m);
+            onClose();
+          }}>Save</button>
         </div>
       </div>
     </div>
@@ -147,6 +222,30 @@ function ResultModal({ doc, onClose, onResave }: {
     </div>
   );
 }
+
+function ConfirmModal({ message, onConfirm, onClose }: {
+  message: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Confirm Action</h2>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.825rem", margin: "0.5rem 0 1rem", lineHeight: "1.4" }}>
+          {message}
+        </p>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={() => { onConfirm(); onClose(); }} style={{ backgroundColor: "var(--red)", borderColor: "var(--red)" }}>
+            Clear List
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Badge({ status }: { status: DocStatus }) {
   const cls: Record<DocStatus, string> = {
     queued: "badge-gray", processing: "badge-blue",
@@ -156,7 +255,18 @@ function Badge({ status }: { status: DocStatus }) {
 }
 
 export default function App() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(LS_API_KEY) ?? "");
+  const [apiKeys, setApiKeys] = useState<string[]>(() => {
+    const stored = localStorage.getItem(LS_API_KEYS);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    const legacy = localStorage.getItem(LS_API_KEY);
+    if (legacy) return [legacy];
+    return [""];
+  });
   const [model,  setModel]  = useState(() => localStorage.getItem(LS_MODEL)   ?? DEFAULT_MODEL);
   const [prompt, setPrompt] = useState(() => localStorage.getItem(LS_PROMPT)  ?? DEFAULT_PROMPT);
 
@@ -169,24 +279,30 @@ export default function App() {
   const [viewDoc,         setViewDoc]         = useState<Doc | null>(null);
   const [editingOutId,    setEditingOutId]    = useState<string | null>(null);
   const [editingOutValue, setEditingOutValue] = useState("");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const processingIds = useRef<Set<string>>(new Set());
 
   useEffect(() => { persistHistory(docs); }, [docs]);
 
-  function saveSettings(k: string, m: string) {
-    setApiKey(k); setModel(m);
-    localStorage.setItem(LS_API_KEY, k);
+  function saveSettings(keys: string[], m: string) {
+    setApiKeys(keys); setModel(m);
+    localStorage.setItem(LS_API_KEYS, JSON.stringify(keys));
     localStorage.setItem(LS_MODEL, m);
+    if (keys.length > 0) {
+      localStorage.setItem(LS_API_KEY, keys[0]);
+    } else {
+      localStorage.removeItem(LS_API_KEY);
+    }
   }
   function savePrompt(p: string) {
     setPrompt(p);
     localStorage.setItem(LS_PROMPT, p);
   }
 
-  async function enqueue(filePath: string, name: string, bytes: Uint8Array) {
+  async function enqueue(filePath: string, name: string, bytes: Uint8Array, customOutPath?: string) {
     const checksum = await sha256hex(bytes);
-    const out = outputPath(filePath);
+    const out = customOutPath ?? outputPath(filePath);
     const checksums = loadChecksums();
 
     let binary = "";
@@ -212,15 +328,35 @@ export default function App() {
     });
   }
 
+  const enqueueRef = useRef(enqueue);
+  useEffect(() => {
+    enqueueRef.current = enqueue;
+  });
 
   useEffect(() => {
     type Payload = { paths: string[] };
     const ul  = listen<Payload>("tauri://drag-drop", async (e) => {
       setDragging(false);
       for (const path of e.payload.paths) {
-        if (!path.toLowerCase().endsWith(".pdf")) continue;
-        const bytes = await readFile(path);
-        await enqueue(path, path.split("/").pop() ?? path, bytes);
+        try {
+          const info = await stat(path);
+          if (info.isDirectory) {
+            const pdfs = await traverseAndCollectPdfs(path, path);
+            for (const pdf of pdfs) {
+              const bytes = await readFile(pdf.path);
+              const safeName = pdf.relativePath.replace(/[/\\]/g, "_");
+              const baseName = safeName.replace(/\.pdf$/i, "");
+              const outDir = joinPath(path, "summaries");
+              const customOutPath = joinPath(outDir, `${baseName}.md`);
+              await enqueueRef.current(pdf.path, pdf.relativePath, bytes, customOutPath);
+            }
+          } else if (path.toLowerCase().endsWith(".pdf")) {
+            const bytes = await readFile(path);
+            await enqueueRef.current(path, path.split("/").pop() ?? path, bytes);
+          }
+        } catch (err) {
+          console.error(`Error processing path ${path}:`, err);
+        }
       }
     });
     const ule = listen("tauri://drag-enter", () => setDragging(true));
@@ -263,33 +399,60 @@ export default function App() {
   async function processDoc(doc: Doc) {
     if (processingIds.current.has(doc.id)) return;
     processingIds.current.add(doc.id);
-    setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "processing" } : d));
-    try {
-      let result = "";
-      await analyzePdfStream(apiKey, model, doc.base64, prompt, (text) => {
-        result += text;
-        setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, progress: result } : d));
-      });
-      const dir = doc.outputPath.substring(0, doc.outputPath.lastIndexOf("/"));
-      if (!await exists(dir)) await mkdir(dir, { recursive: true });
-      await writeTextFile(doc.outputPath, result);
-      const checksums = loadChecksums();
-      checksums[doc.checksum] = doc.outputPath;
-      saveChecksums(checksums);
-      setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "done", progress: result } : d));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "error", progress: msg } : d));
-    } finally {
+
+    const activeKeys = apiKeys.filter(k => k.trim().length > 0);
+    if (activeKeys.length === 0) {
+      setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "error", progress: "No Gemini API Key provided." } : d));
       processingIds.current.delete(doc.id);
+      return;
     }
+
+    let success = false;
+    let lastError: any = null;
+
+    for (let i = 0; i < activeKeys.length; i++) {
+      const currentKey = activeKeys[i];
+      try {
+        let result = "";
+        const keyIndicator = activeKeys.length > 1 ? ` (Key ${i + 1}/${activeKeys.length})` : "";
+        setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "processing", progress: `Initializing connection...${keyIndicator}` } : d));
+
+        await analyzePdfStream(currentKey, model, doc.base64, prompt, (text) => {
+          result += text;
+          setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, progress: result } : d));
+        });
+
+        const dir = doc.outputPath.substring(0, doc.outputPath.lastIndexOf("/"));
+        if (!await exists(dir)) await mkdir(dir, { recursive: true });
+        await writeTextFile(doc.outputPath, result);
+        
+        const checksums = loadChecksums();
+        checksums[doc.checksum] = doc.outputPath;
+        saveChecksums(checksums);
+        
+        setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "done", progress: result } : d));
+        success = true;
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`API Key ${i + 1} failed for ${doc.name}:`, err);
+      }
+    }
+
+    if (!success) {
+      const msg = lastError instanceof Error ? lastError.message : String(lastError);
+      setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, status: "error", progress: `All API keys failed. Last error: ${msg}` } : d));
+    }
+    
+    processingIds.current.delete(doc.id);
   }
 
   useEffect(() => {
     const queued = docs.filter((d) => d.status === "queued" && !processingIds.current.has(d.id));
-    if (queued.length === 0 || !apiKey.trim()) return;
+    const activeKeys = apiKeys.filter(k => k.trim().length > 0);
+    if (queued.length === 0 || activeKeys.length === 0) return;
     for (const doc of queued) processDoc(doc);
-  }, [docs, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docs, apiKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep result modal in sync with streaming updates
   useEffect(() => {
@@ -312,6 +475,11 @@ export default function App() {
               Retry failed ({errorIds.length})
             </button>
           )}
+          {docs.length > 0 && (
+            <button className="btn" onClick={() => setShowClearConfirm(true)}>
+              Clear List
+            </button>
+          )}
           <button className="btn" onClick={() => setShowPrompt(true)}>Prompt</button>
           <button className="btn" onClick={() => setShowSettings(true)}>Settings</button>
         </div>
@@ -330,7 +498,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {docs.map((doc) => (
+              {[...docs].reverse().map((doc) => (
                 <tr key={doc.id}>
                   <td className="td-name">{doc.name}</td>
                   <td className="td-out">
@@ -392,8 +560,18 @@ export default function App() {
 
       {dragging && <div className="drag-overlay"><span>Drop PDFs to add</span></div>}
 
-      {showSettings && <SettingsModal apiKey={apiKey} model={model} onSave={saveSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsModal apiKeys={apiKeys} model={model} onSave={saveSettings} onClose={() => setShowSettings(false)} />}
       {showPrompt   && <PromptModal   prompt={prompt}               onSave={savePrompt}   onClose={() => setShowPrompt(false)} />}
+      {showClearConfirm && (
+        <ConfirmModal
+          message="Are you sure you want to clear all documents from the list? This will not delete the files on your disk."
+          onConfirm={() => {
+            setDocs([]);
+            processingIds.current.clear();
+          }}
+          onClose={() => setShowClearConfirm(false)}
+        />
+      )}
       {viewDoc      && (
         <ResultModal
           doc={viewDoc}
