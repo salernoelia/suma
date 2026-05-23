@@ -2,7 +2,7 @@
 
 ![Dashboard](/screenshots/dashboard.png)
 
-Desktop tool for generating structured summaries of PDF documents using Google Gemini. Drop files onto the app to get detailed, machine-readable summaries saved alongside your originals in your preferred format.
+Desktop tool for transforming PDF documents using Google Gemini. Drop files onto the app to generate summaries, study materials, or data extractions saved alongside your originals in your preferred format.
 
 ## Screenshots
 
@@ -11,15 +11,15 @@ Desktop tool for generating structured summaries of PDF documents using Google G
   <img src="/screenshots/settings.png" width="45%" alt="Settings" />
 </p>
 
-## Download
+## Use Cases
 
-Get the latest release from [GitHub Releases](../../releases/latest):
+Suma is highly versatile thanks to its customizable prompt templates. Some common uses include:
 
-| Platform | File |
-|---|---|
-| macOS | `.dmg` |
-| Windows | `.exe` (NSIS installer) |
-| Linux | `.deb` |
+- **Academic Summaries**: Generate exhaustive, structured Markdown summaries of research papers.
+- **Anki Flashcards**: Transform complex papers into CSV or TXT formatted Q&A pairs for direct import into Anki.
+- **Data Extraction**: Pull specific metrics, tables, or bibliographic data into structured JSON or CSV files.
+- **Simplified Explainers**: Convert technical jargon into simple, ELI5-style explanations for broader audiences.
+- **Literature Reviews**: Batch process multiple documents to create consistent comparative notes.
 
 ## Features
 
