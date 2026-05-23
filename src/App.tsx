@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { readFile, writeTextFile, mkdir, exists, stat, readDir } from "@tauri-apps/plugin-fs";
 import { listen } from "@tauri-apps/api/event";
+import { openPath, revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
 import { analyzePdfStream } from "./lib/gemini";
 import "./App.css";
 
@@ -179,8 +180,17 @@ function SettingsModal({ apiKeys, model, onSave, onClose }: {
           + Add API Key
         </button>
         <label className="field-label mt">Model</label>
-        <input className="field-input" type="text" value={m}
-          onChange={(e) => setM(e.target.value)} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <input className="field-input" type="text" value={m}
+            onChange={(e) => setM(e.target.value)} />
+          <button 
+            className="btn-link" 
+            style={{ alignSelf: "flex-start", fontSize: "0.7rem" }}
+            onClick={() => openUrl("https://ai.google.dev/gemini-api/docs/models")}
+          >
+            View all available models ↗
+          </button>
+        </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={() => {
@@ -444,8 +454,6 @@ export default function App() {
   const [showSettings,    setShowSettings]    = useState(false);
   const [showPrompt,      setShowPrompt]      = useState(false);
   const [viewDoc,         setViewDoc]         = useState<Doc | null>(null);
-  const [editingOutId,    setEditingOutId]    = useState<string | null>(null);
-  const [editingOutValue, setEditingOutValue] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const processingIds = useRef<Set<string>>(new Set());
@@ -544,26 +552,6 @@ export default function App() {
 
   function removeDoc(id: string) {
     setDocs((prev) => prev.filter((d) => d.id !== id));
-  }
-
-  function startEditingOutput(doc: Doc) {
-    setEditingOutId(doc.id);
-    setEditingOutValue(doc.outputPath);
-  }
-
-  function commitOutputEdit(id: string) {
-    const value = editingOutValue.trim();
-    if (value) setDocs((prev) => prev.map((d) => d.id === id ? { ...d, outputPath: value } : d));
-    setEditingOutId(null);
-  }
-
-  function resetOutputPath(id: string) {
-    setDocs((prev) => prev.map((d) => {
-      if (d.id !== id) return d;
-      const def = outputPath(d.path, activePrompt.extension || ".md");
-      if (editingOutId === id) setEditingOutValue(def);
-      return { ...d, outputPath: def };
-    }));
   }
 
   async function processDoc(doc: Doc) {
@@ -700,29 +688,15 @@ export default function App() {
             <tbody>
               {[...docs].reverse().map((doc) => (
                 <tr key={doc.id}>
-                  <td className="td-name">{doc.name}</td>
+                  <td className="td-name">
+                    <button className="file-link-btn" title="Open PDF" onClick={() => openPath(doc.path)}>
+                      {doc.name}
+                    </button>
+                  </td>
                   <td className="td-out">
-                    {editingOutId === doc.id ? (
-                      <div className="out-edit-row">
-                        <input
-                          className="out-edit-input"
-                          value={editingOutValue}
-                          onChange={(e) => setEditingOutValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitOutputEdit(doc.id);
-                            if (e.key === "Escape") setEditingOutId(null);
-                          }}
-                          autoFocus
-                        />
-                        <button className="action-btn" onClick={() => commitOutputEdit(doc.id)}>Save</button>
-                        <button className="action-btn" onClick={() => resetOutputPath(doc.id)}>Reset</button>
-                        <button className="action-btn" onClick={() => setEditingOutId(null)}>Cancel</button>
-                      </div>
-                    ) : (
-                      <button className="out-path-btn" title="Click to edit output path" onClick={() => startEditingOutput(doc)}>
-                        {doc.outputPath}
-                      </button>
-                    )}
+                    <button className="out-path-btn" title="Open output directory" onClick={() => revealItemInDir(doc.outputPath)}>
+                      {doc.outputPath}
+                    </button>
                   </td>
                   <td className="td-status">
                     <Badge status={doc.status} />

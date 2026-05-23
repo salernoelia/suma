@@ -58,13 +58,21 @@
   }
 }
 
-body { background: var(--bg); color: var(--text); }
+html, body { 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+  overflow: hidden; 
+  background: var(--bg); 
+  color: var(--text); 
+}
 
 /* ── App shell ───────────────────────────────────────────────────────────── */
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   position: relative;
   background: var(--bg);
@@ -262,6 +270,25 @@ body { background: var(--bg); color: var(--text); }
   white-space: nowrap;
 }
 
+.file-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  color: var(--text);
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  transition: color 0.1s;
+}
+.file-link-btn:hover { color: var(--accent); text-decoration: underline; }
+
 .td-out {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -283,29 +310,9 @@ body { background: var(--bg); color: var(--text); }
   white-space: nowrap;
   display: block;
   text-align: left;
-  transition: color 0.1s;
+  transition: all 0.1s;
 }
-.out-path-btn:hover { color: var(--text); }
-
-.out-edit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.out-edit-input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.3rem 0.6rem;
-  border-radius: 4px;
-  border: 1px solid var(--accent);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-family: "SF Mono", "Fira Mono", monospace;
-  outline: none;
-  box-shadow: 0 0 0 2px var(--accent-dim);
-}
+.out-path-btn:hover { color: var(--accent); }
 
 .td-status { white-space: nowrap; }
 
