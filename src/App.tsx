@@ -186,7 +186,7 @@ function SettingsModal({ apiKeys, model, onSave, onClose }: {
           <button 
             className="btn-link" 
             style={{ alignSelf: "flex-start", fontSize: "0.7rem" }}
-            onClick={() => openUrl("https://ai.google.dev/gemini-api/docs/models")}
+            onClick={() => openUrl("https://ai.google.dev/gemini-api/docs/models").catch(console.error)}
           >
             View all available models ↗
           </button>
@@ -634,24 +634,13 @@ export default function App() {
               className="prompt-select"
               value={activePromptId} 
               onChange={(e) => {
-                if (e.target.value === "new") {
-                  const newPrompt: Prompt = {
-                    id: crypto.randomUUID(),
-                    title: "New Prompt",
-                    content: "",
-                  };
-                  updatePrompts([...prompts, newPrompt], newPrompt.id);
-                  setShowPrompt(true);
-                } else {
-                  setActivePromptId(e.target.value);
-                  localStorage.setItem(LS_ACTIVE_PROMPT_ID, e.target.value);
-                }
+                setActivePromptId(e.target.value);
+                localStorage.setItem(LS_ACTIVE_PROMPT_ID, e.target.value);
               }}
             >
               {prompts.map(p => (
                 <option key={p.id} value={p.id}>{p.title}</option>
               ))}
-              <option value="new">+ Add New Prompt...</option>
             </select>
           </div>
         </div>
@@ -689,12 +678,12 @@ export default function App() {
               {[...docs].reverse().map((doc) => (
                 <tr key={doc.id}>
                   <td className="td-name">
-                    <button className="file-link-btn" title="Open PDF" onClick={() => openPath(doc.path)}>
+                    <button className="file-link-btn" title="Reveal in directory" onClick={() => revealItemInDir(doc.path).catch(console.error)}>
                       {doc.name}
                     </button>
                   </td>
                   <td className="td-out">
-                    <button className="out-path-btn" title="Open output directory" onClick={() => revealItemInDir(doc.outputPath)}>
+                    <button className="out-path-btn" title="Open output directory" onClick={() => revealItemInDir(doc.outputPath).catch(console.error)}>
                       {doc.outputPath}
                     </button>
                   </td>

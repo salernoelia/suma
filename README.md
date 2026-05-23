@@ -1,8 +1,15 @@
 # Suma
 
-![demo](/screenshots/demo_3.png)
+![Dashboard](/screenshots/dashboard.png)
 
-Desktop tool for generating structured Markdown summaries of academic research papers using Google Gemini. Drop PDFs onto the app and get detailed, machine-readable summaries covering title, authors, methods, results, conclusions, and more, saved as `.md` files alongside the originals.
+Desktop tool for generating structured summaries of PDF documents using Google Gemini. Drop files onto the app to get detailed, machine-readable summaries saved alongside your originals in your preferred format.
+
+## Screenshots
+
+<p align="center">
+  <img src="/screenshots/prompt_editor.png" width="45%" alt="Prompt Editor" />
+  <img src="/screenshots/settings.png" width="45%" alt="Settings" />
+</p>
 
 ## Download
 
@@ -14,13 +21,25 @@ Get the latest release from [GitHub Releases](../../releases/latest):
 | Windows | `.exe` (NSIS installer) |
 | Linux | `.deb` |
 
+## Features
+
+- **Multi-Prompt Management**: Create and switch between multiple prompt templates for different summary styles.
+- **Top Bar Switcher**: Quickly change the active prompt directly from the main interface.
+- **Custom Formats**: Set output extensions to .md, .txt, .csv, or .json for each template.
+- **Interactive UI**: Click filenames to open PDFs or click output paths to reveal summaries in your file manager.
+- **API Key Rotation**: Add multiple Gemini API keys to handle higher volumes through rotation.
+- **Light and Dark Mode**: Native support for your system's color scheme.
+- **Keyboard Shortcuts**: Use the Escape key to quickly close any modal.
+
 ## Usage
 
 1. Open Suma
-2. Click **Settings** and enter your [Google Gemini API key](https://aistudio.google.com/app/apikey)
-3. Drag and drop PDF files or folders onto the window
-4. Summaries are saved as `.md` files in a `summary/` folder next to each PDF
-5. Use **Archive all** to clear the view once you're done, summaries stay accessible
+2. Click **Settings** to enter your [Google Gemini API keys](https://aistudio.google.com/app/apikey) and select your preferred model
+3. Drag and drop PDF files or folders onto the window to start processing
+4. Use the top bar dropdown to switch between active prompt templates
+5. Click any filename to open the source PDF in your default viewer
+6. Click any output path to open the folder where the summary is saved
+7. Clear the list when finished, all summaries remain safely on your disk
 
 ## Build from source
 
@@ -41,4 +60,3 @@ bun run tauri build
 ## Stack
 
 Tauri · React · TypeScript · Google Gemini API
-ni API
