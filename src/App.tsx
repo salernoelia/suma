@@ -634,13 +634,25 @@ export default function App() {
               className="prompt-select"
               value={activePromptId} 
               onChange={(e) => {
-                setActivePromptId(e.target.value);
-                localStorage.setItem(LS_ACTIVE_PROMPT_ID, e.target.value);
+                if (e.target.value === "new") {
+                  const newPrompt: Prompt = {
+                    id: crypto.randomUUID(),
+                    title: "New Prompt",
+                    content: "",
+                    extension: ".md"
+                  };
+                  updatePrompts([...prompts, newPrompt], newPrompt.id);
+                  setShowPrompt(true);
+                } else {
+                  setActivePromptId(e.target.value);
+                  localStorage.setItem(LS_ACTIVE_PROMPT_ID, e.target.value);
+                }
               }}
             >
               {prompts.map(p => (
                 <option key={p.id} value={p.id}>{p.title}</option>
               ))}
+              <option value="new">+ Add New Prompt...</option>
             </select>
           </div>
         </div>
