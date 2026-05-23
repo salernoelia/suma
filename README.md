@@ -18,7 +18,7 @@ Get the latest release from [GitHub Releases](../../releases/latest):
 
 1. Open Suma
 2. Click **Settings** and enter your [Google Gemini API key](https://aistudio.google.com/app/apikey)
-3. Drag and drop PDF files onto the window
+3. Drag and drop PDF files or folders onto the window
 4. Summaries are saved as `.md` files in a `summary/` folder next to each PDF
 5. Use **Archive all** to clear the view once you're done, summaries stay accessible
 
@@ -41,3 +41,4 @@ bun run tauri build
 ## Stack
 
 Tauri · React · TypeScript · Google Gemini API
+ni API
