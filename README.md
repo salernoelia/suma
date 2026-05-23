@@ -6,10 +6,10 @@ Desktop tool for transforming PDF documents using Google Gemini. Drop files onto
 
 ## Screenshots
 
-<p align="center">
+<div align="center" style="display: flex; justify-content: center; gap: 20px;">
   <img src="/screenshots/prompt_editor.png" width="45%" alt="Prompt Editor" />
   <img src="/screenshots/settings.png" width="45%" alt="Settings" />
-</p>
+</div>
 
 ## Use Cases
 
