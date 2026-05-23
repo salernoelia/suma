@@ -29,7 +29,6 @@ Suma is highly versatile thanks to its customizable prompt templates. Some commo
 - **Interactive UI**: Click filenames to open PDFs or click output paths to reveal summaries in your file manager.
 - **API Key Rotation**: Add multiple Gemini API keys to handle higher volumes through rotation.
 - **Light and Dark Mode**: Native support for your system's color scheme.
-- **Keyboard Shortcuts**: Use the Escape key to quickly close any modal.
 
 ## Usage
 
