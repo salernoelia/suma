@@ -22,6 +22,7 @@ const DEFAULT_PROMPTS: Prompt[] = [
     id: "default",
     title: "Academic Summarizer",
     content: DEFAULT_PROMPT_CONTENT,
+    extension: ".md",
   }
 ];
 
@@ -31,6 +32,7 @@ interface Prompt {
   id: string;
   title: string;
   content: string;
+  extension: string;
 }
 
 interface Doc {
@@ -54,11 +56,11 @@ async function sha256hex(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function outputPath(pdfPath: string): string {
+function outputPath(pdfPath: string, extension: string = ".md"): string {
   const lastSlash = pdfPath.lastIndexOf("/");
   const dir  = pdfPath.substring(0, lastSlash);
   const base = pdfPath.substring(lastSlash + 1).replace(/\.pdf$/i, "");
-  return `${dir}/summary/${base}.md`;
+  return `${dir}/summary/${base}${extension}`;
 }
 
 function joinPath(p1: string, p2: string): string {
@@ -212,7 +214,7 @@ function PromptModal({ prompts, activeId, onSave, onClose }: {
   };
 
   const addNew = () => {
-    const newP: Prompt = { id: crypto.randomUUID(), title: "New Prompt", content: "" };
+    const newP: Prompt = { id: crypto.randomUUID(), title: "New Prompt", content: "", extension: ".md" };
     setLocalPrompts([...localPrompts, newP]);
     setCurrentId(newP.id);
   };
@@ -231,6 +233,8 @@ function PromptModal({ prompts, activeId, onSave, onClose }: {
       setCurrentId(remaining[0].id);
     }
   };
+
+  const extensions = [".md", ".txt", ".csv", ".json"];
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -274,7 +278,16 @@ function PromptModal({ prompts, activeId, onSave, onClose }: {
                 onChange={(e) => updateCurrent({ title: e.target.value })}
                 placeholder="Prompt Title"
               />
-              <div style={{ display: "flex", gap: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span className="field-label" style={{ margin: 0, textTransform: "none" }}>Format:</span>
+                <select 
+                  className="prompt-select" 
+                  style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+                  value={currentPrompt.extension || ".md"}
+                  onChange={(e) => updateCurrent({ extension: e.target.value })}
+                >
+                  {extensions.map(ext => <option key={ext} value={ext}>{ext}</option>)}
+                </select>
                 <button 
                   className="btn" 
                   onClick={() => duplicatePrompt(currentPrompt)}
@@ -459,7 +472,7 @@ export default function App() {
 
   async function enqueue(filePath: string, name: string, bytes: Uint8Array, customOutPath?: string) {
     const checksum = await sha256hex(bytes);
-    const out = customOutPath ?? outputPath(filePath);
+    const out = customOutPath ?? outputPath(filePath, activePrompt.extension || ".md");
     const checksums = loadChecksums();
 
     let binary = "";
@@ -504,7 +517,7 @@ export default function App() {
               const safeName = pdf.relativePath.replace(/[/\\]/g, "_");
               const baseName = safeName.replace(/\.pdf$/i, "");
               const outDir = joinPath(path, "summaries");
-              const customOutPath = joinPath(outDir, `${baseName}.md`);
+              const customOutPath = joinPath(outDir, `${baseName}${activePrompt.extension || ".md"}`);
               await enqueueRef.current(pdf.path, pdf.relativePath, bytes, customOutPath);
             }
           } else if (path.toLowerCase().endsWith(".pdf")) {
@@ -547,7 +560,7 @@ export default function App() {
   function resetOutputPath(id: string) {
     setDocs((prev) => prev.map((d) => {
       if (d.id !== id) return d;
-      const def = outputPath(d.path);
+      const def = outputPath(d.path, activePrompt.extension || ".md");
       if (editingOutId === id) setEditingOutValue(def);
       return { ...d, outputPath: def };
     }));
