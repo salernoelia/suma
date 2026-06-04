@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { readFile, writeTextFile, mkdir, exists, stat, readDir } from "@tauri-apps/plugin-fs";
 import { listen } from "@tauri-apps/api/event";
-import { openPath, revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
+import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
 import { analyzePdfStream } from "./lib/gemini";
 import "./App.css";
 
