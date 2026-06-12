@@ -9,6 +9,7 @@ if (!["patch", "minor", "major"].includes(bump)) {
 
 const TAURI_CONF = "src-tauri/tauri.conf.json";
 const PKG = "package.json";
+const CARGO = "src-tauri/Cargo.toml";
 
 execSync("git fetch origin", { stdio: "inherit" });
 execSync("git rebase --autostash origin/main", { stdio: "inherit" });
@@ -28,9 +29,19 @@ const pkg = JSON.parse(readFileSync(PKG, "utf8"));
 pkg.version = next;
 writeFileSync(PKG, JSON.stringify(pkg, null, 2) + "\n");
 
+let cargo = readFileSync(CARGO, "utf8");
+cargo = cargo.replace(/^version = ".*?"/m, `version = "${next}"`);
+writeFileSync(CARGO, cargo);
+
+try {
+  execSync("cargo check", { cwd: "src-tauri", stdio: "inherit" });
+} catch (e) {
+  console.warn("Could not run cargo check to update Cargo.lock:", e.message);
+}
+
 console.log(`Releasing v${next}…`);
-execSync(`git add ${TAURI_CONF} ${PKG}`, { stdio: "inherit" });
+execSync(`git add ${TAURI_CONF} ${PKG} ${CARGO} src-tauri/Cargo.lock`, { stdio: "inherit" });
 execSync(`git commit -m "chore: release v${next}"`, { stdio: "inherit" });
-execSync(`git tag v${next}`, { stdio: "inherit" });
-execSync("git push --follow-tags", { stdio: "inherit" });
+execSync(`git tag -a v${next} -m "Release v${next}"`, { stdio: "inherit" });
+execSync(`git push origin main v${next}`, { stdio: "inherit" });
 console.log(`Done — v${next} tagged and pushed. CI will build and draft the release.`);
