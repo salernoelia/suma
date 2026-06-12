@@ -58,7 +58,7 @@
   }
 }
 
-html, body { 
+html, body, #root { 
   height: 100%; 
   margin: 0; 
   padding: 0; 
@@ -224,6 +224,7 @@ html, body {
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .table-wrap {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin: 0.75rem 1.25rem 1.25rem;
   background: var(--bg-raised);
