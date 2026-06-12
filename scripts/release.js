@@ -43,5 +43,5 @@ console.log(`Releasing v${next}…`);
 execSync(`git add ${TAURI_CONF} ${PKG} ${CARGO} src-tauri/Cargo.lock`, { stdio: "inherit" });
 execSync(`git commit -m "chore: release v${next}"`, { stdio: "inherit" });
 execSync(`git tag -a v${next} -m "Release v${next}"`, { stdio: "inherit" });
-execSync(`git push origin main v${next}`, { stdio: "inherit" });
+execSync(`git push origin refs/heads/main v${next}`, { stdio: "inherit" });
 console.log(`Done — v${next} tagged and pushed. CI will build and draft the release.`);
